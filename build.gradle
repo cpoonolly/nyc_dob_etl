@@ -1,0 +1,82 @@
+group 'com.hb'
+version '2.0-SNAPSHOT'
+
+buildscript {
+    repositories {
+        jcenter()
+    }
+    dependencies {
+        classpath 'com.github.jengelman.gradle.plugins:shadow:1.2.4'
+    }
+}
+
+apply plugin: 'java'
+apply plugin: 'com.github.johnrengelman.shadow'
+
+sourceCompatibility = 1.8
+
+repositories {
+    mavenCentral()
+
+    flatDir {
+        dirs 'libs'
+    }
+}
+
+task uploadJarToS3(dependsOn: shadowJar, type: Exec) {
+    commandLine 'aws', 's3', 'cp', 'build/libs/hbetl-2.0-SNAPSHOT-all.jar', 's3://cherry.hbetl/hbetl-2.0-SNAPSHOT-all.jar'
+}
+
+def lambdaFunctionNames = [
+    'nyc_dob_load_stat_report',
+    'nyc_dob_process_stat_report',
+    'nyc_dob_load_job_page',
+    'nyc_dob_scrape_job_page'
+]
+
+def updateLambdaTasks = []
+lambdaFunctionNames.each { lambdaName ->
+    task "updateLambda_$lambdaName"(type: Exec, dependsOn: uploadJarToS3) {
+        commandLine 'aws', 'lambda', 'update-function-code',
+                '--function-name', lambdaName,
+                '--s3-bucket', 'cherry.hbetl',
+                '--s3-key', 'hbetl-2.0-SNAPSHOT-all.jar'
+    }
+    updateLambdaTasks.add tasks["updateLambda_$lambdaName"]
+}
+
+task updateLambdas(dependsOn: updateLambdaTasks) {
+    doLast {
+        println 'finished updating lambdas'
+    }
+}
+
+dependencies {
+    // aws redshift jdbc driver
+    runtime name: 'RedshiftJDBC42-1.2.1.1001'
+
+    // jsoup HTML parser library
+    compile 'org.jsoup:jsoup:1.10.1'
+
+    // useful apache commons file utilities
+    compile 'commons-io:commons-io:2.5'
+
+    // aws sdk for s3 & redshift access
+    compile 'com.amazonaws:aws-java-sdk-s3:1.11.86'
+    compile 'com.amazonaws:aws-java-sdk-redshift:1.11.86'
+    compile 'com.amazonaws:aws-java-sdk-lambda:1.11.86'
+
+    // apache poi excel parsing library
+    compile 'org.apache.poi:poi:3.9'
+
+    // guava
+    compile 'com.google.guava:guava:11.0.2'
+
+    // logging
+    compile 'org.apache.logging.log4j:log4j-api:2.7'
+    compile 'org.apache.logging.log4j:log4j-core:2.7'
+
+
+    // junit test framework
+    testCompile 'junit:junit:4.11'
+}
